@@ -1,5 +1,7 @@
 import argparse
 import logging
+import shlex
+import subprocess
 import textwrap
 import time
 from pprint import pprint
@@ -9,7 +11,6 @@ import sys
 from tf_pose.estimator import TfPoseEstimator
 from tf_pose.networks import get_graph_path, model_wh
 import math
-import task
 import pyttsx3
 
 logger = logging.getLogger('TfPoseEstimator-WebCam')
@@ -145,19 +146,32 @@ def find_correct_human(humans):
     return correct_human
 
 
-def update_Min_Max_values(x, y, bodyPart):
+def update_Min_Max_values(x, y, bodyPartCoords):
     if x < 0 or y < 0:
-        return bodyPart
-    newMinMax = bodyPart
-    if x < bodyPart[0]:
+        return bodyPartCoords
+    newMinMax = bodyPartCoords
+    if x < bodyPartCoords[0]:
         newMinMax[0] = x
-    elif x > bodyPart[1]:
+    if x > bodyPartCoords[1]:
         newMinMax[1] = x
-    elif y < bodyPart[2]:
+    if y < bodyPartCoords[2]:
         newMinMax[2] = x
-    elif y > bodyPart[3]:
+    if y > bodyPartCoords[3]:
         newMinMax[3] = x
     return newMinMax
+
+
+def is_lean_too_far(shoulder):
+    lean = False
+
+    x_diff = abs(shoulder[1] - shoulder[0])
+    y_diff = abs(shoulder[3] - shoulder[2])
+    # print(x_diff)
+    # print(y_diff)
+    if x_diff > 30 and y_diff > 30:
+        lean = True
+
+    return lean
 
 
 if __name__ == '__main__':
@@ -180,16 +194,13 @@ if __name__ == '__main__':
         e = TfPoseEstimator(get_graph_path(args.model), target_size=(w, h))
     else:
         e = TfPoseEstimator(get_graph_path(args.model), target_size=(432, 368))
-    # logger.debug('cam read+')
     cam = cv2.VideoCapture(args.camera)
     ret_val, image = cam.read()
-    # logger.info('cam image=%dx%d' % (image.shape[1], image.shape[0]))
     count = 0
     i = 0
     frm = 0
-    elbow_Min_max = [100000, -1, 100000, -1]  # [xMin, xMax, yMin, yMax]
-    hip_Min_Max = [100000, -1, 100000, -1]  # [xMin, xMax, yMin, yMax]
 
+    shoulder_Min_max = [100000, -1, 100000, -1]  # [xMin, xMax, yMin, yMax]
     global height, width
     average_ratio = 0
     down = False
@@ -207,6 +218,8 @@ if __name__ == '__main__':
     abductorCount = 0
     up = False
     down = False
+    prevHipCoords = (-1,-1)
+    correctHipCoords = (-1, -1)
 
     while True:
         ret_val, image = cam.read()
@@ -218,12 +231,10 @@ if __name__ == '__main__':
         height, width = image.shape[0], image.shape[1]
         inPos = int(width * .75)
         y = 0
-        x_elbow = -1
-        y_elbow = -1
-        x_hip = -1
-        y_hip = -1
+        x_shoulder = -1
+        y_shoulder = -1
 
-        # This is the part of the loop that recognizes whether a bicep curl is being performed or not
+        # This is the part of the loop that recognizes whether a hip abductor is being performed or not
         if len(pose) > 0:
 
             # set up text to speech module
@@ -233,6 +244,8 @@ if __name__ == '__main__':
             engine.setProperty("voice", "english-us")
 
             rightHipAngle, leftHipAngle = find_hip_angle()
+            # print("Left Hip Angle: ", leftHipAngle)
+            # print("Right Hip Angle: ", rightHipAngle)
 
             # if not right and not left:
             if state == "start":
@@ -248,6 +261,7 @@ if __name__ == '__main__':
                 prevCorrectHip = correctHip
 
             if correctHip == "Right":
+                prevHipCoords = correctHipCoords
                 correctHipCoords = (find_point(human, 9)[0], find_point(human, 9)[1])
                 if (state is "abductor_start" or state is "abductor_up") and up:
                     cv2.arrowedLine(image, (correctHipCoords[0] - 10, correctHipCoords[1] - 10),
@@ -256,11 +270,16 @@ if __name__ == '__main__':
                     cv2.arrowedLine(image, (correctHipCoords[0] + 10, correctHipCoords[1] + 10),
                                     (correctHipCoords[0] + 70, correctHipCoords[1] + 70), (0, 0, 255), 2, 8, 0, 0.3)
             elif correctHip == "Left":
+                prevHipCoords = correctHipCoords
                 correctHipCoords = (find_point(human, 12)[0], find_point(human, 12)[1])
+                # print("Correct Hip Coordinates: ", correctHipCoords)
                 if state is "abductor_start" or state is "abductor_up" and up:
                     cv2.arrowedLine(image, (correctHipCoords[0] + 10, correctHipCoords[1] - 10),
                                     (correctHipCoords[0] + 70, correctHipCoords[1] - 70), (0, 0, 255), 2, 8, 0, 0.3)
                 elif state is "abductor_top" or state is "abductor_down" or state is "abductor_finished" and down:
+                    if abs(prevHipCoords[1] - correctHipCoords[1]) > 50:
+                        correctHipCoords[0] = prevHipCoords[0] - 10
+                        correctHipCoords[1] = prevHipCoords[1] + 10
                     cv2.arrowedLine(image, (correctHipCoords[0] - 10, correctHipCoords[1] + 10),
                                     (correctHipCoords[0] - 70, correctHipCoords[1] + 70), (0, 0, 255), 2, 8, 0, 0.3)
 
@@ -275,7 +294,7 @@ if __name__ == '__main__':
                 if frm == 0:
                     out = cv2.VideoWriter('outpy.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30,
                                           (width, height))
-                    print("Initializing")
+                    # print("Initializing")
                     frm += 1
                 cv2.imshow('tf-pose-estimation result', image)
                 if i != 0:
@@ -285,32 +304,47 @@ if __name__ == '__main__':
                     break
                 continue
 
+            try:
+                shoulder = human.body_parts[2 if correctHip == "Left" else 5]  # left hand point
+                x_shoulder = shoulder.x * width
+                y_shoulder = shoulder.y * height
+            except:
+                pass
+
             # Either left or right leg has been identified as the correct leg and exercise can start
-            if correctHip != "Can't identify correct hip." and state == "start":
+            if state == "start":  # and correctHip != "Can't identify correct hip."
                 prevState = state
                 state = "abductor_start"
+                shoulder_Min_max = update_Min_Max_values(x_shoulder, y_shoulder, shoulder_Min_max)
                 up = True
-                print(state)
+                # print(state)
 
             # abductor_start -> start
             elif angleCorrectHip < 11 and state == "abductor_start":
                 prevState = state
                 state = "start"
-                print(state)
+                # print(state)
 
             # abductor_start -> abductor_up
-            elif 42 > angleCorrectHip > 15 and state == "abductor_start":
+            elif 38 > angleCorrectHip > 15 and state == "abductor_start":
                 prevState = state
                 state = "abductor_up"
-                print(state)
+                command_line = "python /home/coles/tf-pose-estimation/subprocess_audio_scripts/lift_hip.py"
+                args1 = shlex.split(command_line)
+                subprocess.Popen(args1)
+                # print(state)
 
             # abductor_up -> abductor_top
-            elif angleCorrectHip > 42 and state == "abductor_up":
+            elif angleCorrectHip > 38 and state == "abductor_up":
                 prevState = state
                 state = "abductor_top"
                 up = False
                 down = True
-                print(state)
+                update_Min_Max_values(x_shoulder, y_shoulder, shoulder_Min_max)
+                command_line = "python /home/coles/tf-pose-estimation/subprocess_audio_scripts/lower_hip.py"
+                args1 = shlex.split(command_line)
+                subprocess.Popen(args1)
+                # print(state)
 
             # abductor_up -> abductor_finished
             elif angleCorrectHip < 15 and state == "abductor_up":
@@ -319,15 +353,16 @@ if __name__ == '__main__':
                 up = False
                 down = False
                 feedback = "You did not raise your leg to the top of your range of motion. Please try and lift your" \
-                           " leg as high as you can."
-                print(state)
+                           " leg as high as you can and try again."
+                # print(state)
                 print(feedback)
 
             # abductor_top -> abductor_down
-            elif 42 > angleCorrectHip > 20 and state == "abductor_top":
+            elif 38 > angleCorrectHip > 20 and state == "abductor_top":
                 prevState = state
                 state = "abductor_down"
-                print(state)
+                is_lean_too_far(shoulder_Min_max)
+                # print(state)
 
             # abductor_down -> abductor_top
             elif angleCorrectHip > 45 and state == "abductor_down":
@@ -335,7 +370,8 @@ if __name__ == '__main__':
                 state = "abductor_top"
                 feedback = "You did not lower your leg back to the bottom of your range of motion. Remember to lower " \
                            "your leg back to its starting position before starting another repetition."
-                print(state)
+                update_Min_Max_values(x_shoulder, y_shoulder, shoulder_Min_max)
+                # print(state)
                 print(feedback)
 
             # abductor_down -> abductor_finished
@@ -343,29 +379,36 @@ if __name__ == '__main__':
                 prevState = state
                 state = "abductor_finished"
                 abductorCount += 1
+                print("Rep Number: {}".format(abductorCount))
                 up = False
                 down = False
-                feedback = "You have successfully completed a hip abuctor with good form. Next time try and lift your" \
-                           " leg even higher than you did the last time."
-                print(state)
+                update_Min_Max_values(x_shoulder, y_shoulder, shoulder_Min_max)
+                lean = is_lean_too_far(shoulder_Min_max)
+                if not lean:
+                    feedback = "You have successfully completed a hip abuctor with good form. Next time try and lift " \
+                               "your leg even higher than you did the last time."
+                    command_line = "python /home/coles/tf-pose-estimation/subprocess_audio_scripts/success_bad_form.py {}".format(abductorCount)
+                    args1 = shlex.split(command_line)
+                    subprocess.Popen(args1)
+                else:
+                    feedback = "You have successfully completed a hip abductor, however during the exercise you were " \
+                               "leaning too far to one side. Try and keep your torso stable and still as much as " \
+                               "possible throughout the exercise."
+                    command_line = "python /home/coles/tf-pose-estimation/subprocess_audio_scripts/success_good_form.py {}".format(abductorCount)
+                    args1 = shlex.split(command_line)
+                    subprocess.Popen(args1)
+                # print(state)
                 print(feedback)
+                print('\n' * 2)
 
-
-            # abductor_finished -> abductor_up
-            elif angleCorrectHip > 20 and state == "abductor_finished":
-                prevState = state
-                state = "abductor_up"
-                feedback = "You did not return to your starting position. Remember to lower your leg until it is " \
-                           "parallel with your standing leg."
-                print(state)
-                print(feedback)
 
             elif state == "abductor_finished":
                 prevState = state
                 state = "start"
                 up = False
                 down = False
-                print(state)
+                shoulder_Min_max = [100000, -1, 100000, -1]  # [xMin, xMax, yMin, yMax]
+                # print(state)
 
             cv2.putText(image, "Hip Abduction State: {}".format(state), (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5,
                         (0, 255, 0), thickness=2)
@@ -380,22 +423,22 @@ if __name__ == '__main__':
 
         else:
             abductorCount = 0
-            elbow_Min_max = [100000, -1, 100000, -1]
-            hip_Min_Max = [100000, -1, 100000, -1]
-            text = "Please stand facing camera with your entire body in full view of the camera."
-            wrapped_text = textwrap.wrap(text, width=35)
-            j = 0
-            for line in wrapped_text:
-                textsize = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
-                gap = textsize[1] + 10
+            shoulder_Min_max = [100000, -1, 100000, -1]  # [xMin, xMax, yMin, yMax]
+            if args.__getattribute__('camera') == 0:
+                text = "Please stand facing camera with your entire body in full view of the camera."
+                wrapped_text = textwrap.wrap(text, width=35)
+                j = 0
+                for line in wrapped_text:
+                    textsize = cv2.getTextSize(line, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)[0]
+                    gap = textsize[1] + 10
 
-                y = int((image.shape[0] + textsize[1]) / 2 - 110) + j * gap
-                x = int((image.shape[1] - textsize[0]) / 2)
+                    y = int((image.shape[0] + textsize[1]) / 2 - 110) + j * gap
+                    x = int((image.shape[1] - textsize[0]) / 2)
 
-                cv2.putText(image, line, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), thickness=2,
+                    cv2.putText(image, line, (x, y), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), thickness=2,
                             lineType=cv2.LINE_AA)  # (int(width/2) - 150, 110)
 
-                j += 1
+                    j += 1
 
         cv2.putText(image, "FPS: %f" % (1.0 / (time.time() - fps_time)), (10, 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
@@ -403,7 +446,7 @@ if __name__ == '__main__':
         if frm == 0:
             out = cv2.VideoWriter('outpy.avi', cv2.VideoWriter_fourcc('M', 'J', 'P', 'G'), 30,
                                   (width, height))
-            print("Initializing")
+            # print("Initializing")
             frm += 1
         cv2.imshow('tf-pose-estimation result', image)
         if i != 0:
