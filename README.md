@@ -1,24 +1,58 @@
+### Citations
+The majority of this code comes from https://github.com/ildoonet/tf-pose-estimation. I wrote various scripts that allow specific exercise detection and feedback which uses the code from tf-pose-estimation. Go to this repository in order to install/understand how to run the basic code, or just navigate to the bottom of this README for basic instructions. 
+
 # tf-pose-estimation
 
 'Openpose', human pose estimation algorithm, have been implemented using Tensorflow. It also provides several variants that have some changes to the network structure for **real-time processing on the CPU or low-power embedded devices.**
 
-**You can even run this on your macbook with a descent FPS!**
+## Demo
 
-Original Repo(Caffe) : https://github.com/CMU-Perceptual-Computing-Lab/openpose
 
-| CMU's Original Model</br> on Macbook Pro 15" | Mobilenet-thin </br>on Macbook Pro 15" | Mobilenet-thin</br>on Jetson TX2 |
-|:---------|:--------------------|:----------------|
-| ![cmu-model](/etcs/openpose_macbook_cmu.gif)     | ![mb-model-macbook](/etcs/openpose_macbook_mobilenet3.gif) | ![mb-model-tx2](/etcs/openpose_tx2_mobilenet3.gif) |
-| **~0.6 FPS** | **~4.2 FPS** @ 368x368 | **~10 FPS** @ 368x368 |
-| 2.8GHz Quad-core i7 | 2.8GHz Quad-core i7 | Jetson TX2 Embedded Board | 
+*********************************************************************************************************************************
+If you need help understanding how to download and use the original tf-pose-estimation, go to https://github.com/ildoonet/tf-pose-estimation. The following will include instructions on how to get the scripts and servers I wrote to run.
 
-Implemented features are listed here : [features](./etcs/feature.md)
 
-## Important Updates
+### Instructions
 
-- 2019.3.12 Add new models using mobilenet-v2 architecture. See : [experiments.md](./etcs/experiments.md)
-- 2018.5.21 Post-processing part is implemented in c++. It is required compiling the part. See: https://github.com/ildoonet/tf-pose-estimation/tree/master/src/pafprocess
-- 2018.2.7 Arguments in run.py script changed. Support dynamic input size.
+## Webcam
+1. In order to get the webcam version working, you either need to have a built in webcam in your laptop/computer, or have an external webcam plugged in. Once you have a webcam, navigate to the main tf-pose-estimation directory. For me, it was called tf-pose-estimation.
+
+```
+~/tf-pose-estimation$ 
+```
+
+2. After that, depending on whether you want to start the hip abduction helper or bicep curl helper, type either one of the following:
+
+```
+$ python run_bicep_curl.py --resize=256x256
+```
+or
+
+```
+$ python run_hip_abductor.py --resize=256x256
+```
+
+3. Quit the script with ctrl + C.
+
+## Server (Use with Gabriel's mobile client)
+1. Navigate to the main tf-pose-estimation directory. For me, it was called tf-pose-estimation.
+
+```
+~/tf-pose-estimation$ 
+```
+
+2. After that, you can decide whether or not you want to run the server with bicep curl or hip abductor feedback. Set whichever variable at the top of the server file to true that you want to run. Next, start the server. Remember that you need to start the client side after starting this server in order for the mobile application to actually work. The instructions to do that can be found in the READ ME in the repository called "updated-gabriel-proxy-server."
+
+```
+$ python pairserver.py
+```
+
+
+3. Quit the server with ctrl + C.
+
+
+*********************************************************************************************************************************
+The information found below can also be found at https://github.com/ildoonet/tf-pose-estimation.
 
 ## Install
 
@@ -32,6 +66,13 @@ You need dependencies below.
 - slidingwindow
   - https://github.com/adamrehn/slidingwindow
   - I copied from the above git repo to modify few things.
+
+### Pre-Install Jetson case
+
+```bash
+$ sudo apt-get install libllvm-7-ocaml-dev libllvm7 llvm-7 llvm-7-dev llvm-7-doc llvm-7-examples llvm-7-runtime
+$ export LLVM_CONFIG=/usr/bin/llvm-config-7 
+```
 
 ### Install
 
@@ -55,7 +96,7 @@ Alternatively, you can install this repo as a shared package using pip.
 
 ```bash
 $ git clone https://www.github.com/ildoonet/tf-pose-estimation
-$ cd tf-openpose
+$ cd tf-pose-estimation
 $ python setup.py install  # Or, `pip install -e .`
 ```
 
@@ -102,6 +143,12 @@ Then you will see the screen as below with pafmap, heatmap, result and etc.
 
 ```
 $ python run_webcam.py --model=mobilenet_thin --resize=432x368 --camera=0
+```
+
+Apply TensoRT 
+
+```
+$ python run_webcam.py --model=mobilenet_thin --resize=432x368 --camera=0 --tensorrt=True
 ```
 
 Then you will see the realtime webcam screen with estimated poses as below. This [Realtime Result](./etcs/openpose_macbook13_mobilenet2.gif) was recored on macbook pro 13" with 3.1Ghz Dual-Core CPU.
