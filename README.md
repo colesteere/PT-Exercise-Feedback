@@ -1,4 +1,9 @@
-### Citations
+# Physical Therapy (PT) Exercise Assistant
+
+This is an assistant that provides just-in-time instructions for PT exercises. Here are demo videos:
+https://www.youtube.com/playlist?list=PLMP5vmwBuCAik6TUq5KkvUzZ9OUWoq_BC
+
+## Citations
 The majority of this code comes from https://github.com/ildoonet/tf-pose-estimation. I wrote various scripts that allow specific exercise detection and feedback which uses the code from tf-pose-estimation. Go to this repository in order to install/understand how to run the basic code, or just navigate to the bottom of this README for basic instructions. 
 
 # tf-pose-estimation
